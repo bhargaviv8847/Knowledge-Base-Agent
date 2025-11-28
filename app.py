@@ -1,13 +1,13 @@
 import streamlit as st
-from PyPDF2 import PdfReader
+from PyPDF2 import PdfReader  # Correct import
 from sentence_transformers import SentenceTransformer
 import faiss
 import numpy as np
+import pandas as pd
 
 # Load free embedding model
 model = SentenceTransformer("all-MiniLM-L6-v2")
 
-# Extract text helper
 def extract_text(file):
     if file.name.lower().endswith(".pdf"):
         reader = PdfReader(file)
@@ -20,55 +20,47 @@ def extract_text(file):
     else:
         return file.read().decode("utf-8", errors="ignore").strip()
 
-# UI
-st.title("📘 Knowledge Base AI Agent (Free & Online Demo)")
+st.title("📘 Knowledge Base AI Agent (Online Demo – Free)")
 
-uploaded_files = st.file_uploader("Upload documents (PDF/TXT)", type=["pdf","txt"], accept_multiple_files=True)
+docs = st.file_uploader("Upload documents (PDF/TXT)", type=["pdf","txt"], accept_multiple_files=True)
 
 if "index" not in st.session_state:
     st.session_state.index = None
-    st.session_state.chunks = None
+    st.session_state.df = None
 
 if st.button("Process Documents"):
-    if not uploaded_files:
-        st.error("Please upload at least one document!")
+    if not docs:
+        st.error("Upload at least one document!")
     else:
-        texts = []
-        for file in uploaded_files:
-            texts.append(extract_text(file))
+        all_text = []
+        for d in docs:
+            all_text.append(extract_text(d))
 
-        combined_text = "\n\n".join(texts)
-        chunks = [c.strip() for c in combined_text.split("\n") if c.strip()]
+        lines = []
+        for doc_text in all_text:
+            for line in doc_text.split("\n"):
+                if line.strip():
+                    lines.append(line.strip())
 
-        st.session_state.chunks = chunks
-
-        # Generate embeddings
-        embeddings = model.encode(chunks)
-
-        # Create FAISS index
+        embeddings = model.encode(lines)
         dim = embeddings.shape[1]
+
         index = faiss.IndexFlatL2(dim)
         index.add(np.array(embeddings, dtype="float32"))
 
         st.session_state.index = index
-        st.success("✅ Documents processed and indexed successfully!")
+        st.session_state.df = pd.DataFrame({"text": lines})
 
-st.markdown("### ❓ Ask Questions From Your Docs")
+        st.success("✅ FAISS index built! Ask questions now.")
 
-question = st.text_input("Enter your question here")
+question = st.text_input("Ask a question:")
 
 if st.button("Get Answer"):
     if st.session_state.index is None:
-        st.error("Process documents first before asking questions!")
-    elif not question.strip():
-        st.error("Please enter a question!")
+        st.error("Process docs first!")
     else:
         q_embedding = model.encode([question])
-        _, I = st.session_state.index.search(np.array(q_embedding, dtype="float32"), 3)
-
-        st.markdown("### 🤖 Answer")
-        
-        # Combine 3 most relevant lines for answer generation
-        answer_lines = " ".join([st.session_state.chunks[i] for i in I[0]])
-        
-        st.write(answer_lines)
+        _, I = st.session_state.index.search(np.array(q_embedding, dtype="float32"), 1)
+        idx = I[0][0]
+        st.write("🤖 Most relevant answer from docs:")
+        st.write(st.session_state.df.iloc[idx]["text"])
