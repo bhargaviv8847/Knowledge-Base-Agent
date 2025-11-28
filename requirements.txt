@@ -3,4 +3,4 @@ pandas
 sentence-transformers
 faiss-cpu
 numpy
-
+PyPDF2
